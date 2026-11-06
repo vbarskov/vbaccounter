@@ -1,0 +1,27 @@
+{
+  "name": "vbaccounter",
+  "version": "0.1.0",
+  "description": "Личный помощник Kimi Code по обязательствам ТОО: отчётность, платежи, подтверждения и напоминания.",
+  "author": { "name": "VB" },
+  "keywords": ["accounting", "kazakhstan", "reporting", "reminders"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "VB Accounter",
+    "shortDescription": "Отчётность ТОО, сроки и следующие действия",
+    "longDescription": "Проверяйте, что нужно сдать и оплатить, сохраняйте состояния и подтверждения, получайте новые напоминания при проверке. Работает локально или на настроенном SSH-хосте.",
+    "developerName": "VB"
+  },
+  "mcpServers": {
+    "vbaccounter": {
+      "command": "./scripts/mcp-server.mjs",
+      "cwd": "./"
+    },
+    "vbaccounter-ssh": {
+      "command": "./scripts/mcp-server.mjs",
+      "cwd": "./",
+      "environment_id": "vbaccounter-ssh",
+      "enabled": false,
+      "startupTimeoutMs": 60000
+    }
+  }
+}

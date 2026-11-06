@@ -109,3 +109,18 @@ test('plugin manifests resolve installed assets and server without app checkout 
   assert.ok(server.args.some(arg => arg.includes('${PLUGIN_ROOT}/scripts/mcp-server.mjs')));
   assert.ok((await readFile(join(root, 'skills/setup/SKILL.md'), 'utf8')).includes('vb_status'));
 });
+
+test('Kimi Code manifest provides local and opt-in SSH servers', async () => {
+  const manifest = JSON.parse(await readFile(join(root, 'kimi.plugin.json'), 'utf8'));
+  assert.equal(manifest.name, 'vbaccounter');
+  assert.equal(manifest.skills, './skills/');
+  assert.deepEqual(manifest.mcpServers.vbaccounter, {
+    command: './scripts/mcp-server.mjs',
+    cwd: './',
+  });
+  assert.equal(manifest.mcpServers['vbaccounter-ssh'].environment_id, 'vbaccounter-ssh');
+  assert.equal(manifest.mcpServers['vbaccounter-ssh'].enabled, false);
+  assert.equal(manifest.mcpServers['vbaccounter-ssh'].command, './scripts/mcp-server.mjs');
+  const { stat } = await import('node:fs/promises');
+  assert.ok((await stat(join(root, 'scripts/mcp-server.mjs'))).mode & 0o111);
+});
