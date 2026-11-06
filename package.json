@@ -1,18 +1,26 @@
 {
   "name": "vbaccounter",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Локальный MCP-плагин для обязательств ТОО",
   "main": "./dsh/lib/index.js",
   "exports": {
     ".": "./dsh/lib/index.js",
+    "./client": {
+      "default": "./dsh/client.js"
+    },
     "./package.json": "./package.json"
   },
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dsh": {
     "bundle": {
       "patch": "./dsh/cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   },
   "scripts": {

@@ -16,12 +16,22 @@
  * в одном пространстве имён: имя `setup` уже занимает плагин MCU iOS Git Flow,
  * и один из двух навыков был бы вытеснен.
  *
- * Пакет импортирует только встроенные модули Node.js: так `link:`-установка
- * работает без зависимостей в профиле DSH.
+ * Вторая половина того же пакета (`./client`) рисует чип, панель статусов и
+ * карточку в ленте чата. Данные для неё отдаёт read-only маршрут
+ * `GET /vbaccounter/status`, который регистрируется здесь же, если в
+ * композиции есть веб-сервер: браузер не может читать файлы состояния.
+ *
+ * Пакет импортирует только встроенные модули Node.js и собственные файлы
+ * репозитория: так `link:`-установка работает без зависимостей в профиле DSH.
  */
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { createService } from '../../lib/service.mjs';
+import { defaultDataDirectory } from '../../scripts/mcp-server.mjs';
+
+/** Путь маршрута статуса; браузерная половина использует ту же константу. */
+export const STATUS_PATH = '/vbaccounter/status';
 
 /** Навыки плагина в порядке каталога: сначала настройка. */
 export const SKILL_NAMES = ['vb-setup', 'vb-obligations', 'vb-reporting'];
@@ -117,6 +127,89 @@ function skillProvider(name) {
   };
 }
 
+/**
+ * Свести ответы `vb_status` и `vb_list_obligations` в компактную сводку для
+ * браузерной половины.
+ * @param {{accounts?: unknown[], unreadNotifications?: number, notificationSettings?: object,
+ *   stateDir?: string, rules?: {kind?: string}}} status - ответ `vb_status`.
+ * @param {{obligations?: unknown[], asOf?: string}} list - ответ `vb_list_obligations`.
+ * @returns {{asOf: string|null, accounts: {name: string, taxRegime: string}[], total: number,
+ *   unread: number, settings: object|null, stateDir: string|null, rules: string|null,
+ *   counts: {overdue: number, week: number, fortnight: number, unknown: number, needsData: number},
+ *   items: {id: string, title: string, due: string|null, days: number|null, stage: string,
+ *     kind: string, applicability: string, lifecycle: string, account: string,
+ *     authority: string, period: string, nextAction: string}[]}}
+ */
+export function summarize(status, list) {
+  const obligations = (Array.isArray(list?.obligations) ? list.obligations : []).filter(item => !item.closed);
+  const counts = { overdue: 0, week: 0, fortnight: 0, unknown: 0, needsData: 0 };
+  for (const item of obligations) {
+    const days = item.urgency?.daysUntilDue;
+    if (typeof days === 'number') {
+      if (days < 0) counts.overdue += 1;
+      else if (days <= 7) counts.week += 1;
+      else if (days <= 14) counts.fortnight += 1;
+    }
+    if (item.applicability === 'unknown') counts.unknown += 1;
+    if (item.lifecycle === 'needs-data') counts.needsData += 1;
+  }
+  const rank = item => (typeof item.urgency?.daysUntilDue === 'number' ? item.urgency.daysUntilDue : Number.POSITIVE_INFINITY);
+  const items = obligations
+    .map(item => ({
+      id: item.id,
+      title: item.title,
+      due: item.due ?? null,
+      days: typeof item.urgency?.daysUntilDue === 'number' ? item.urgency.daysUntilDue : null,
+      stage: item.urgency?.stage ?? 'unknown',
+      kind: item.kind ?? '',
+      applicability: item.applicability ?? '',
+      lifecycle: item.lifecycle ?? '',
+      account: item.accountName ?? '',
+      authority: item.authority ?? '',
+      period: item.period ?? '',
+      nextAction: item.nextAction ?? '',
+    }))
+    .sort((left, right) => rank(left) - rank(right));
+  return {
+    asOf: list?.asOf ?? null,
+    accounts: (Array.isArray(status?.accounts) ? status.accounts : []).map(account => ({
+      name: account.name,
+      taxRegime: account.taxRegime ?? 'unknown',
+    })),
+    total: obligations.length,
+    unread: status?.unreadNotifications ?? 0,
+    settings: status?.notificationSettings ?? null,
+    stateDir: status?.stateDir ?? null,
+    rules: status?.rules?.kind ?? null,
+    counts,
+    items,
+  };
+}
+
+/**
+ * Создать HTTP-обработчик маршрута статуса.
+ * @param {{call: (name: string, args?: object) => Promise<unknown>}} service - сервис плагина.
+ * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>}
+ */
+export function createStatusHandler(service) {
+  return async (request, response) => {
+    if (request.method !== 'GET') {
+      response.writeHead(405, { allow: 'GET', 'content-type': 'text/plain; charset=utf-8' });
+      response.end('method not allowed');
+      return;
+    }
+    try {
+      const status = await service.call('vb_status', {});
+      const list = await service.call('vb_list_obligations', { horizonDays: 366 });
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      response.end(JSON.stringify(summarize(status, list)));
+    } catch (error) {
+      response.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    }
+  };
+}
+
 /** Имя Cordis-плагина в списке плагинов профиля. */
 export const name = 'vbaccounter';
 
@@ -124,10 +217,18 @@ export const name = 'vbaccounter';
 export const inject = ['skills'];
 
 /**
- * Проверить инструкции и зарегистрировать провайдеров навыков.
+ * Проверить инструкции, зарегистрировать провайдеров навыков и, если в
+ * композиции есть веб-сервер, отдать маршрут статуса браузерной половине.
  * @param {import('@deepseek-ai/cordis').Context} ctx - контекст с `ctx.skills`.
  */
 export function apply(ctx) {
   validateSkills();
   for (const skillName of SKILL_NAMES) ctx.skills.registerProvider(() => skillProvider(skillName));
+  // Веб-сервера может не быть (например, headless-запуск): тогда навыки
+  // остаются доступны, а маршрут просто не регистрируется.
+  ctx.inject(['webServer'], webCtx => {
+    const service = createService({ stateDir: defaultDataDirectory() });
+    const handler = createStatusHandler(service);
+    webCtx.effect(() => webCtx.webServer.register({ kind: 'exact', path: STATUS_PATH, handler }), 'vbaccounter: status route');
+  });
 }

@@ -23,7 +23,8 @@ test('корневой пакет объявляет DSH-слой, точку в
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.dsh.bundle.patch, './dsh/cordis.patch.yml');
   assert.equal(pkg.main, './dsh/lib/index.js');
-  assert.deepEqual(pkg.exports, { '.': './dsh/lib/index.js', './package.json': './package.json' });
+  assert.deepEqual(pkg.exports, { '.': './dsh/lib/index.js', './client': { default: './dsh/client.js' }, './package.json': './package.json' });
+  assert.equal(pkg.dsh.client.platform, 'web');
   const patch = await readFile(path.join(root, 'dsh/cordis.patch.yml'), 'utf8');
   assert.match(patch, /- insert:/);
   assert.match(patch, /^ {4}- id: vbaccounter$/m);
@@ -59,7 +60,12 @@ test('плагин регистрирует три навыка с метада�
   assert.deepEqual(plugin.SKILL_NAMES, skillNames);
 
   const providers = [];
-  plugin.apply({ skills: { registerProvider(factory) { providers.push(factory()); } } });
+  plugin.apply({
+    skills: { registerProvider(factory) { providers.push(factory()); } },
+    inject(deps, callback) {
+      callback({ effect(run) { run(); }, webServer: { register() { return () => {}; } } });
+    },
+  });
   assert.deepEqual(providers.map(provider => provider.name), skillNames);
 
   for (const [index, provider] of providers.entries()) {
