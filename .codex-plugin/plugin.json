@@ -16,5 +16,5 @@
     "composerIcon": "./assets/icon.png",
     "logo": "./assets/icon.png"
   },
-  "extensions": { "com.openai": { "onboardingSkill": "./skills/setup/SKILL.md" } }
+  "extensions": { "com.openai": { "onboardingSkill": "./skills/vb-setup/SKILL.md" } }
 }

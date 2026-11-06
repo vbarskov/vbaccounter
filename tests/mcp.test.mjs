@@ -100,6 +100,11 @@ test('plugin manifests resolve installed assets and server without app checkout 
   const overlay = JSON.parse(await readFile(join(root, '.codex-plugin/plugin.json'), 'utf8'));
   assert.equal(manifest.name, 'vbaccounter');
   assert.equal(overlay.name, manifest.name);
+  // Онбординг ссылается на существующий навык настройки в обоих манифестах.
+  for (const source of [manifest, overlay]) {
+    const onboarding = await readFile(join(root, source.extensions['com.openai'].onboardingSkill), 'utf8');
+    assert.match(onboarding, /vb_status/);
+  }
   const ui = manifest.extensions['com.openai'].interface;
   const icon = await readFile(join(root, ui.logo));
   assert.equal(icon.subarray(1, 4).toString(), 'PNG');
