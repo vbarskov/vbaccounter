@@ -1,14 +1,14 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "vbaccounter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Личный помощник по обязательствам ТОО: что сдать, оплатить и проверить, состояния отчётов и напоминания.",
   "author": { "name": "VB" },
   "keywords": ["accounting", "kazakhstan", "reporting", "reminders"],
   "extensions": {
     "com.openai": {
       "requires_local_executor": true,
-      "onboardingSkill": "./skills/setup/SKILL.md",
+      "onboardingSkill": "./skills/vb-setup/SKILL.md",
       "interface": {
         "displayName": "VB Accounter",
         "shortDescription": "Отчётность ТОО, сроки и следующие действия",

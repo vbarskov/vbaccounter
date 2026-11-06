@@ -1,5 +1,5 @@
 ---
-name: setup
+name: vb-setup
 description: Подключить данные VB Accounting к локальному плагину VB Accounter или создать компанию для учёта обязательств и настроить напоминания.
 ---
 

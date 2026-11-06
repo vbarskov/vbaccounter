@@ -1,9 +1,13 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createService } from '../lib/service.mjs';
 import { tools, validateArguments } from './tool-catalog.mjs';
+
+/** Имя и версия сервера берутся из `package.json`: один источник для всех хостов. */
+const packageInfo = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
 
 const versions = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const instructions = 'VB Accounter хранит состояние отдельно от приложения. Источник VB Accounting только для чтения. Применимость, жизненный цикл, оплата и срочность различаются. Неизвестная применимость и непроверенные правила требуют внимания. accepted/paid означают сохранение предоставленного подтверждения, не автоматическую проверку кабинета. check_notifications не запускает фоновые проверки и не отправляет push. Не объявляйте отсутствие обязательств при ошибке источника или неполном покрытии.';
@@ -30,7 +34,7 @@ export function createSession(service) {
       if (initialized) return error(id, -32600, 'Already initialized');
       if (!params || typeof params.protocolVersion !== 'string') return error(id, -32602, 'protocolVersion is required');
       initialized = true;
-      return success(id, { protocolVersion: versions.includes(params.protocolVersion) ? params.protocolVersion : versions[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'vbaccounter', title: 'VB Accounter', version: '0.1.0' }, instructions });
+      return success(id, { protocolVersion: versions.includes(params.protocolVersion) ? params.protocolVersion : versions[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: packageInfo.name, title: 'VB Accounter', version: packageInfo.version }, instructions });
     }
     if (!initialized) return error(id, -32002, 'Initialize the MCP connection first');
     if (method === 'tools/list') {

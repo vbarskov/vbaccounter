@@ -54,7 +54,9 @@ async function client(t) {
 test('MCP negotiates lifecycle, lists tools, rejects invalid input and persists company across restart', async t => {
   const c = await client(t);
   assert.equal((await c.request('tools/list')).error.code, -32002);
-  assert.equal((await c.initialize()).result.protocolVersion, '2025-11-25');
+  const initialized = await c.initialize();
+  assert.equal(initialized.result.protocolVersion, '2025-11-25');
+  assert.equal(initialized.result.serverInfo.version, JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version);
   const catalog = (await c.request('tools/list')).result.tools;
   assert.ok(catalog.some(tool => tool.name === 'vb_list_obligations'));
   assert.equal(catalog.find(tool => tool.name === 'vb_status').annotations.readOnlyHint, true);
@@ -107,7 +109,7 @@ test('plugin manifests resolve installed assets and server without app checkout 
   const server = config.mcpServers.vbaccounter;
   assert.equal(server.type, 'stdio');
   assert.ok(server.args.some(arg => arg.includes('${PLUGIN_ROOT}/scripts/mcp-server.mjs')));
-  assert.ok((await readFile(join(root, 'skills/setup/SKILL.md'), 'utf8')).includes('vb_status'));
+  assert.ok((await readFile(join(root, 'skills/vb-setup/SKILL.md'), 'utf8')).includes('vb_status'));
 });
 
 test('Kimi Code manifest provides local and opt-in SSH servers', async () => {
