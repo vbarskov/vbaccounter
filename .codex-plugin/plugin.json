@@ -1,6 +1,6 @@
 {
   "name": "vbaccounter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Личный помощник по обязательствам ТОО: отчётность, платежи, подтверждения и напоминания.",
   "author": { "name": "VB" },
   "skills": "./skills/",
