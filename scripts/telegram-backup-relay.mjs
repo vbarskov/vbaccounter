@@ -5,11 +5,10 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensurePrivateDirectory, readRegular, writeAtomic } from '../lib/storage.mjs';
 import {
-  isTelegramBotToken, parseTelegramChatId, sendTelegramBackup, telegramDocumentLimit
+  isTelegramBackupCaption, isTelegramBackupFileName, isTelegramBotToken, parseTelegramChatId, sendTelegramBackup, telegramDocumentLimit
 } from '../lib/backup-telegram.mjs';
 
 const proofPattern = /^[A-Za-z0-9_-]{43}$/;
-const archiveNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.tar\.gz\.age$/;
 const ageHeader = Buffer.from('age-encryption.org/v1\n');
 const maxUploadBody = telegramDocumentLimit + 65_536;
 const maxParallelUploads = 4;
@@ -85,15 +84,19 @@ async function readUpload(request) {
   if (form.getAll('chat_id').length !== 1 || form.getAll('document').length !== 1) {
     throw invalidRequest();
   }
+  const captions = form.getAll('caption');
+  const [field] = captions;
+  const caption = typeof field === 'string' ? field.replace(/\r\n?/g, '\n') : field;
+  if (captions.length > 1 || !isTelegramBackupCaption(caption)) throw invalidRequest();
   const chatId = readChatId(form.get('chat_id'));
   const document = form.get('document');
-  if (!(document instanceof File) || !archiveNamePattern.test(document.name)) throw invalidRequest();
+  if (!(document instanceof File) || !isTelegramBackupFileName(document.name)) throw invalidRequest();
   if (document.size > telegramDocumentLimit) throw requestError(413, 'relay-invalid-request');
   const bytes = Buffer.from(await document.arrayBuffer());
   if (bytes.length <= ageHeader.length || !bytes.subarray(0, ageHeader.length).equals(ageHeader)) {
     throw invalidRequest();
   }
-  return { chatId, bytes, fileName: document.name };
+  return { chatId, bytes, fileName: document.name, ...(caption !== undefined ? { caption } : {}) };
 }
 
 function readPairingUpdate(message, receivedAt) {

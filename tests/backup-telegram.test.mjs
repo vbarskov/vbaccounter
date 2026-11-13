@@ -70,12 +70,26 @@ test('rejects invalid recipients, tokens, and over-limit archives before any net
     { chatId: '12345678901234567890' },
     { token: '123:abcd?redirect=evil' },
     { fileName: '../backup.tar.gz.age' },
+    { caption: 'a'.repeat(1025) },
     { bytes: Buffer.from('unprotected archive') }
   ]) {
     await assert.rejects(sendTelegramBackup({ ...archive, ...invalid, fetchImpl }));
   }
   await assert.rejects(sendTelegramBackup({ ...archive, bytes: overLimit, fetchImpl }), /50 МБ/);
   assert.equal(requests, 0);
+});
+
+test('sends the company name and BIN as a Unicode filename and plain caption', async () => {
+  const name = 'ТОО-VB-Tech-260740046461-2026-11-13.tar.gz.age';
+  const caption = 'ТОО «VB Tech» · БИН 260740046461';
+  const fetchImpl = withPreflight(async (_url, options) => {
+    assert.equal(options.body.get('document').name, name);
+    assert.equal(options.body.get('caption'), caption);
+    assert.equal(options.body.has('parse_mode'), false);
+    const { result } = await receipt().json();
+    return Response.json({ ok: true, result: { ...result, caption, document: { ...result.document, file_name: name } } });
+  });
+  assert.equal((await sendTelegramBackup({ ...archive, fileName: name, caption, fetchImpl })).messageId, 123);
 });
 
 test('does not upload when Telegram cannot verify the intended private chat', async () => {

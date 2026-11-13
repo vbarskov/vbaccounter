@@ -77,7 +77,7 @@ test('a company backup has its BIN in the filename and only its files inside', w
   const documentId = 'ba9b4131-94c9-4aef-82a0-3c11b6d92888';
   const otherDocumentId = 'a32c098a-4ecf-4cf0-99fb-366f553fc90d';
   const accounts = [
-    { id: 'first', name: 'First', data: { company: { bin } } },
+    { id: 'first', name: 'ТОО «Первая компания»', data: { company: { bin } } },
     { id: 'second', name: 'Second', data: { company: { bin: otherBin } } }
   ];
   const localDocuments = join(stateDir, 'documents');
@@ -94,8 +94,9 @@ test('a company backup has its BIN in the filename and only its files inside', w
   const staleDocDir = join(accountingDir, 'documents', createHash('sha256').update('second').digest('hex'));
   await mkdir(staleDocDir);
   await writeFile(join(staleDocDir, 'foreign.pdf'), 'another company');
-  const { bytes, fileName } = await createBackupArchive({ ...options, bin, now: new Date('2026-11-13T10:00:00Z') });
-  assert.equal(fileName, `vb-backup-${bin}-2026-11-13.tar.gz.age`);
+  const { bytes, fileName, caption } = await createBackupArchive({ ...options, bin, now: new Date('2026-11-13T10:00:00Z') });
+  assert.equal(fileName, `ТОО-Первая-компания-${bin}-2026-11-13.tar.gz.age`);
+  assert.equal(caption, `ТОО «Первая компания» · БИН ${bin}`);
   const files = tar(bytes, '-tzf', '-').split('\n').filter(name => name && !name.endsWith('/'));
   assert.deepEqual(files.sort(), [
     `VB Accounter/documents/${documentId}.bin`, 'VB Accounter/state.json', 'VB Accounting/vb-accounting.json'

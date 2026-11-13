@@ -15,6 +15,7 @@ const digest = createHash('sha256').update(bearer).digest('base64url');
 const chatId = '1234567';
 const time = new Date('2026-11-13T12:00:00Z');
 const archive = Buffer.from('age-encryption.org/v1\nfixture');
+const legacyFileName = 'vb-backup-2026-11-13.tar.gz.age';
 
 async function fixture(t, overrides = {}) {
   const stateDir = await mkdtemp(join(tmpdir(), 'vbaccounter-relay-'));
@@ -60,16 +61,17 @@ async function fixture(t, overrides = {}) {
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({ chat_id: id })
   });
-  const send = (id = chatId, bytes = archive, key = bearer) => {
+  const send = (id = chatId, bytes = archive, key = bearer, captions = []) => {
     const body = new FormData();
     body.set('chat_id', id);
-    body.set('document', new Blob([bytes]), 'vb-backup-2026-11-13.tar.gz.age');
+    body.set('document', new Blob([bytes]), legacyFileName);
+    for (const caption of captions) body.append('caption', caption);
     return post('/v1/backups', { headers: { authorization: `Bearer ${key}` }, body });
   };
   return { update, pair, send, uploads, stateDir, post };
 }
 
-test('the plugin deep link pairs with the shared relay and uploads to the selected chat', async t => {
+test('the plugin deep link pairs with the shared relay and uploads a plain caption to the selected chat', async t => {
   const { update, uploads, stateDir, post } = await fixture(t);
   const client = createBackupRelayClient({ stateDir, env: {
     VBACCOUNTER_TELEGRAM_RELAY_URL: 'https://test.invalid',
@@ -87,9 +89,12 @@ test('the plugin deep link pairs with the shared relay and uploads to the select
   await client.verify(chatId);
   await assert.rejects(client.verify('999999'), /chat_id/);
   assert.equal(uploads.length, 0);
-  const receipt = await client.send({ chatId, bytes: archive, fileName: 'vb-backup-2026-11-13.tar.gz.age' });
+  const fileName = 'vb-backup-ТОО-Пример-123456789012-2026-11-13.tar.gz.age';
+  const caption = 'ТОО «Пример» <выгрузка>\nПодготовлено в VB Accounter';
+  await assert.rejects(client.send({ chatId, bytes: archive, fileName, caption: '\ud800' }), { code: 'relay-invalid-request' });
+  const receipt = await client.send({ chatId, bytes: archive, fileName, caption });
   assert.equal(receipt.messageId, 99);
-  assert.deepEqual(uploads[0].bytes, archive);
+  assert.deepEqual(uploads[0], { token, chatId, bytes: archive, fileName, caption });
 });
 
 test('accepts only a verified private start, binds the proof to the chat, and throttles backup uploads', async t => {
@@ -107,11 +112,23 @@ test('accepts only a verified private start, binds the proof to the chat, and th
 
   const result = await send();
   assert.deepEqual(await result.json(), { ok: true, messageId: 99, sentAt: time.toISOString() });
-  assert.deepEqual(uploads[0], { token, chatId, bytes: archive, fileName: 'vb-backup-2026-11-13.tar.gz.age' });
+  assert.deepEqual(uploads[0], { token, chatId, bytes: archive, fileName: legacyFileName });
   assert.equal((await send()).status, 429);
   assert.equal(uploads.length, 1);
   const state = await readFile(join(stateDir, 'telegram-relay.json'), 'utf8');
   for (const secret of [bearer, token, webhookSecret]) assert.ok(!state.includes(secret));
+});
+
+test('rejects duplicate, file, empty, and oversized captions before forwarding', async t => {
+  const { update, send, uploads } = await fixture(t);
+  await update(webhookSecret);
+  for (const captions of [['first', 'second'], [new Blob(['wrong field type'])], [''], ['😀'.repeat(513)]]) {
+    const result = await send(chatId, archive, bearer, captions);
+    assert.equal(result.status, 400);
+    assert.deepEqual(await result.json(), { ok: false, code: 'relay-invalid-request' });
+  }
+  assert.equal(uploads.length, 0);
+  assert.equal((await send()).status, 200);
 });
 
 test('ignores stale starts and replayed updates after a new proof replaces the old proof', async t => {
