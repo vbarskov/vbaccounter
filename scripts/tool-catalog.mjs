@@ -2,22 +2,36 @@ const text = (description, maxLength = 500) => ({ type: 'string', minLength: 1, 
 const identifier = text('Стабильный идентификатор из результата инструмента.', 250);
 const path = text('Абсолютный путь к локальному файлу, выбранному пользователем.', 4096);
 const day = { ...text('Календарная дата YYYY-MM-DD.', 10), pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
+const companyBin = { ...text('БИН юрлица из 12 цифр.', 12), pattern: '^\\d{12}$' };
 const choice = values => ({ type: 'string', enum: values });
 const flag = description => ({ type: 'boolean', description });
 const notes = text('Пояснение пользователя или основание изменения.', 8000);
 const account = { accountId: identifier };
 const notificationScope = { ...account, includeDemo: flag('Включить учебные ТОО; по умолчанию false.') };
 
-function tool(name, description, properties = {}, required = [], readOnly = false, idempotent = readOnly) {
+function tool(name, description, properties = {}, required = [], readOnly = false, idempotent = readOnly, openWorld = false) {
   return {
     name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false },
-    annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: idempotent, openWorldHint: false },
+    annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: idempotent, openWorldHint: openWorld },
   };
 }
 
 export const tools = [
   tool('vb_status', 'Показать подключённый источник, ТОО, каталог состояния и ограничения покрытия отчётности.', {}, [], true),
+  tool('vb_backup_pair', 'Создать ссылку Start для привязки личного чата к общему боту резервных копий. Секрет привязки остаётся на компьютере. Вызов не отправляет архив.', {
+    reset: flag('Выпустить новую ссылку для другого личного чата по запросу пользователя. До нажатия Start отправка приостановится.')
+  }),
+  tool('vb_backup_settings', 'Показать доступные юрлица или сохранить настройки зашифрованной копии одного юрлица по БИН. Токены и закрытые ключи в аргументы не передаются. Вызов не отправляет архив и не запускает расписание.', {
+    bin: companyBin,
+    bot: choice(['default', 'own', 'disabled']),
+    chatId: { ...text('Положительный числовой chat_id личного чата с выбранным ботом.', 16), pattern: '^[1-9]\\d{0,15}$' },
+    recipient: text('Публичный ключ age, начинающийся с age1.', 2510)
+  }, [], false, true, true),
+  tool('vb_send_backup', 'Зашифровать и отправить проводки, обязательства и вложения выбранного по БИН юрлица в его настроенный личный чат Telegram. При подтверждённой отправке этого юрлица за текущий месяц повтор пропускается. Вызывайте при разрешённой пользователем отправке или по его расписанию.', {
+    bin: companyBin,
+    retryUnconfirmed: flag('Повтор после неизвестного результата. Только после проверки чата и по просьбе пользователя.')
+  }, ['bin'], false, false, true),
   tool('vb_connect_workspace', 'Подключить выбранный пользователем vb-accounting.json версии 6 для чтения. Исходный файл не изменяется. Не искать и не подключать личные файлы без запроса пользователя.', { path }, ['path']),
   tool('vb_create_company', 'Создать профиль ТОО в отдельном хранилище плагина. Не изменяет настольное приложение.', {
     name: text('Название ТОО.'), bin: { ...text('БИН из 12 цифр.', 12), pattern: '^\\d{12}$' },

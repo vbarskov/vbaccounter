@@ -73,4 +73,102 @@ vb_ack_notification {"id":"notification-id","snoozeUntil":"2026-11-10"}
 
 ## Данные
 
-MCP-сервер сам не отправляет бухгалтерские данные внешним сервисам. Результаты вызовов инструментов передаются модели через хост для ответа в чате. Учитывайте это при выборе подключаемого источника и подтверждающих документов. Сохраняйте постоянный каталог состояния и файлы подтверждений доступными для будущих проверок.
+Результаты вызовов инструментов передаются модели через хост для ответа в чате. Сохраняйте постоянный каталог состояния и файлы подтверждений доступными для будущих проверок.
+
+## Резервные копии в Telegram
+
+При первичной настройке выберите юрлицо по названию и БИН из списка `availableCompanies`, который возвращает `vb_backup_settings {}`. Для каждого юрлица можно выбрать общего бота, своего бота или пропустить резервное копирование. Для общего бота `vb_backup_pair {}` выдаёт ссылку на привязку. Откройте её в Telegram, нажмите **Start** и укажите положительный `chat_id` личного чата. Плагин проверит привязку при сохранении настроек. Общий бот поддерживает один привязанный чат на каталог данных плагина. В него можно отправлять копии нескольких юрлиц. Токен общего бота хранится на сервере доставки. [Как работают ссылки для запуска ботов Telegram](https://core.telegram.org/bots/features#deep-linking)
+
+Для своего бота нажмите **Start** в его личном чате и сохраните токен в файле `telegram-bot-token` по пути `ownBotTokenPath` из `vb_backup_settings`. В терминале macOS выполните команды ниже. Если каталог отличается, измените `vb_backup_dir`. При вводе токен скрыт. Доступ к файлу есть только у владельца.
+
+```sh
+(
+  vb_backup_dir="$HOME/Library/Application Support/VB Accounter"
+  umask 077
+  mkdir -p "$vb_backup_dir" || exit 1
+  printf 'Токен Telegram-бота: '
+  IFS= read -rs vb_bot_token || exit 1
+  printf '\n'
+  [ -n "$vb_bot_token" ] || exit 1
+  vb_token_file=$(mktemp "$vb_backup_dir/.telegram-bot-token.XXXXXXXX") || exit 1
+  if printf '%s\n' "$vb_bot_token" > "$vb_token_file" &&
+    mv -f "$vb_token_file" "$vb_backup_dir/telegram-bot-token"; then
+    unset vb_bot_token
+  else
+    rm -f "$vb_token_file"
+    exit 1
+  fi
+)
+```
+
+Для шифрования установите `age`, например `brew install age` на macOS. Выполните `age-keygen -o key.txt`, сохранив `key.txt` на носителе или в хранилище, доступном с другого компьютера. В настройке плагина используйте только открытый ключ из строки `Public key`, начинающийся с `age1`. [Документация age](https://github.com/FiloSottile/age#usage)
+
+Сохраните параметры через `vb_backup_settings` с БИН выбранного юрлица. Для своего бота используйте `own`, для общего — `default`. Файл VB Accounting берётся из подключённого источника или из стандартного каталога `~/Library/Application Support/VB Accounting` на macOS. Старую общую настройку нужно настроить заново для выбранного БИН.
+
+```text
+vb_backup_settings {}
+vb_backup_settings {"bin":"123456789012"}
+vb_backup_pair {}
+vb_backup_settings {"bin":"123456789012","bot":"default","chatId":"123456789","recipient":"age1…"}
+vb_send_backup {"bin":"123456789012"}
+vb_backup_settings {"bin":"123456789012","bot":"disabled"}
+```
+
+`vb_backup_settings {}` возвращает настроенные юрлица в `configuredCompanies`. Вызов с БИН показывает настройки и готовность выбранного юрлица. Для отправки по расписанию попросите создать ежемесячное задание с вызовом `vb_send_backup` и нужным БИН. Если несколько юрлиц отправляют копии общим ботом в один чат, разнесите задания по времени.
+
+В архив входят данные и вложения выбранного юрлица из VB Accounter и VB Accounting. Архив `vb-backup-BIN-YYYY-MM-DD.tar.gz.age` шифруется на компьютере и отправляется в личный чат. Общий бот получает зашифрованный файл через сервер доставки, свой бот получает его напрямую через Telegram Bot API. Плагин учитывает одну подтверждённую отправку для БИН и назначения за календарный месяц по UTC. Если подтверждение потерялось, проверьте чат и при необходимости запустите `vb_send_backup` вручную с тем же БИН и `"retryUnconfirmed":true`.
+
+Размер одного файла ограничен 50 МБ. Для запуска по расписанию компьютер с исходными данными и хост автоматизаций должны работать и иметь доступ к интернету. [Telegram Bot API](https://core.telegram.org/bots/api#senddocument)
+
+### Восстановление
+
+Скачайте архив из личного чата с ботом и расшифруйте его закрытым ключом. Сначала распакуйте в отдельный каталог и проверьте, что в нём появились `VB Accounter` с `state.json` и `VB Accounting` с `vb-accounting.json`. Если были вложения, они будут в папках `documents`.
+
+```sh
+umask 077
+mkdir -p ./vb-restore
+age --decrypt -i '/путь/к/key.txt' -o ./vb-restore/backup.tar.gz '/путь/к/копии.tar.gz.age' &&
+  tar -xzf ./vb-restore/backup.tar.gz -C ./vb-restore
+```
+
+В архиве одно юрлицо. На Mac с действующей базой других компаний распакуйте копию в отдельный каталог и сохраните её там. Автоматического объединения с рабочей базой пока нет. На новом Mac без рабочих данных можно вернуть файлы и папки `documents` на исходные пути при закрытых приложении и хосте плагина. Если имя учётной записи или каталог хранения изменились, обновите абсолютные пути к вложениям в `state.json`. При смене пути подключённого источника VB Accounting также переподключите файл и перенесите привязки к его карточке компании. После восстановления проверьте проводки и приобщённые документы.
+
+### Развёртывание сервера общего бота
+
+Сервер доставки работает на Mac или хостинге Node.js. Чтобы Telegram и установленные плагины могли подключиться, серверу нужен постоянный публичный HTTPS-адрес. Если токен бота был раскрыт, отзовите его в @BotFather и используйте новый.
+
+#### Запуск на Mac
+
+1. Из постоянного каталога плагина выполните команды ниже. Введите токен общего бота при запросе. Ввод скрыт. `configure` сохраняет токен и секрет webhook в каталоге `~/Library/Application Support/VB Accounter Telegram Relay` с доступом для владельца. `start` запускает службу доставки на Mac. Ежемесячную отправку настраивают отдельным заданием для каждого БИН.
+
+   ```sh
+   (
+     printf 'Токен общего Telegram-бота: '
+     IFS= read -rs vb_relay_token || exit 1
+     printf '\n'
+     printf '%s\n' "$vb_relay_token" | node scripts/macos-backup-relay.mjs configure
+   ) && node scripts/macos-backup-relay.mjs start
+   ```
+
+2. Направьте постоянный публичный HTTPS-адрес на `http://127.0.0.1:8787` через туннель или обратный прокси. Для Cloudflare Tunnel понадобится домен в Cloudflare. Временный адрес `trycloudflare.com` меняется при следующем запуске туннеля. [Настройка Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/get-started/)
+
+3. Проверьте доступность сервера и зарегистрируйте webhook. Если у бота уже есть webhook на другом адресе, используйте `--replace` только при его переносе на этот сервер.
+
+   ```sh
+   node scripts/macos-backup-relay.mjs set-url 'https://backup.example.com'
+   node scripts/macos-backup-relay.mjs status
+   node scripts/macos-backup-relay.mjs register-webhook
+   ```
+
+Служба `dev.vbaccounter.telegram-relay` запускается при входе владельца в macOS и останавливается при выходе. Для ручной остановки выполните `node scripts/macos-backup-relay.mjs stop`. Для доступности общего бота Mac должен быть в сети, а служба и туннель должны работать при настройке и отправке копий.
+
+Проверьте отправку архива типичного размера через публичный адрес. У Cloudflare прокси по умолчанию ждёт ответ сервера до 125 секунд. [Лимиты соединений Cloudflare](https://developers.cloudflare.com/fundamentals/reference/connection-limits/)
+
+#### Запуск на хостинге Node.js
+
+1. Запустите `node scripts/telegram-backup-relay.mjs`. Передайте абсолютный путь на постоянном диске в `VBACCOUNTER_TELEGRAM_RELAY_STATE_DIR`. По умолчанию сервер слушает `127.0.0.1:8787`. Для размещения на хостинге доступны `VBACCOUNTER_TELEGRAM_RELAY_HOST` и `PORT`. Прокси должен пропускать запросы до 51 МБ.
+2. Добавьте серверные секреты `VBACCOUNTER_TELEGRAM_DEFAULT_BOT_TOKEN` и `VBACCOUNTER_TELEGRAM_WEBHOOK_SECRET` в настройках хостинга. Зарегистрируйте Telegram `setWebhook` для `https://адрес-сервера/v1/telegram/webhook` с тем же `secret_token`. [Telegram Bot API](https://core.telegram.org/bots/api#setwebhook)
+
+#### Проверка перед выпуском
+
+Укажите публичный HTTPS-адрес и имя бота в `lib/backup-relay-config.mjs`. Для локальной проверки с тестовым сервером используйте `VBACCOUNTER_TELEGRAM_RELAY_URL` и `VBACCOUNTER_TELEGRAM_DEFAULT_BOT_USERNAME`. Проверьте привязку тестового чата через Start и отправьте зашифрованный архив с тестовыми данными.
